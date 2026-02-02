@@ -1,0 +1,7 @@
+Django>=4.2
+djangorestframework>=3.14
+mysqlclient>=2.2
+django-cors-headers>=4.0
+
+# On Windows, if building mysqlclient is difficult you can instead use:
+# mysql-connector-python>=8.0

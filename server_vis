@@ -1,0 +1,429 @@
+// Node.js Express Server - Visitor Management System
+// Run: node server_visitor.js
+
+const express = require('express');
+const mysql = require('mysql2');
+const cors = require('cors');
+const path = require('path');
+
+const app = express();
+const PORT = 3000;
+
+// Enable CORS for frontend
+app.use(cors());
+
+// Middleware to parse JSON
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+
+// Serve static files (HTML, CSS, JS)
+app.use(express.static('.'));
+
+// MySQL Connection Configuration
+const db = mysql.createConnection({
+    host: 'localhost',
+    user: 'root',              // Change this to your MySQL username
+    password: 'Suraj_jadhav2003',              // Change this to your MySQL password
+    database: 'users'  // Change this to your database name
+});
+
+// SQL used to ensure table exists
+const createTableSql = `CREATE TABLE IF NOT EXISTS users (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    name VARCHAR(100) NOT NULL,
+    email VARCHAR(100) NOT NULL UNIQUE,
+    mobile_number VARCHAR(20) NOT NULL,
+    gender ENUM('Male', 'Female', 'Other') NOT NULL,
+    reason_for_appointment TEXT NOT NULL,
+    entry_time DATETIME NOT NULL,
+    exit_time DATETIME NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;`;
+
+// Connect to MySQL
+db.connect((err) => {
+    if (err) {
+        console.error('❌ Error connecting to MySQL:', err.message);
+        console.error('\nPlease check:');
+        console.error('1. MySQL server is running');
+        console.error('2. Database credentials are correct');
+        console.error('3. Database exists');
+        return;
+    }
+    console.log('✅ Connected to MySQL database');
+    console.log(`📊 Database: ${db.config.database}`);
+    // Ensure the expected table exists. If not, create it and insert sample data.
+    const createTableSql = `CREATE TABLE IF NOT EXISTS users (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        name VARCHAR(100) NOT NULL,
+        email VARCHAR(100) NOT NULL UNIQUE,
+        mobile_number VARCHAR(20) NOT NULL,
+        gender ENUM('Male', 'Female', 'Other') NOT NULL,
+        reason_for_appointment TEXT NOT NULL,
+        entry_time DATETIME NOT NULL,
+        exit_time DATETIME NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;`;
+
+    db.query(createTableSql, (err) => {
+        if (err) {
+            console.error('Error ensuring users table exists:', err.message);
+            return;
+        }
+        console.log('✅ Ensured `users` table exists');
+
+        // If table is empty, insert sample rows so the UI shows data like the screenshots.
+        db.query('SELECT COUNT(*) as cnt FROM users', (err, results) => {
+            if (err) {
+                console.error('Error checking users count:', err.message);
+                return;
+            }
+            const count = results && results[0] ? results[0].cnt : 0;
+            if (count === 0) {
+                const sampleValues = [
+                    ['John Doe', 'john.doe@example.com', '+91-9876543210', 'Male', 'Business Meeting', '2024-01-29 09:00:00', '2024-01-29 11:30:00'],
+                    ['Jane Smith', 'jane.smith@example.com', '+91-9876543211', 'Female', 'Property Inspection', '2024-01-29 10:00:00', '2024-01-29 12:00:00'],
+                    ['Bob Johnson', 'bob.johnson@example.com', '+91-9876543212', 'Male', 'Maintenance Check', '2024-01-29 11:00:00', '2024-01-29 13:00:00'],
+                    ['Alice Williams', 'alice.williams@example.com', '+91-9876543213', 'Female', 'New Tenant Visit', '2024-01-29 14:00:00', '2024-01-29 15:30:00'],
+                    ['Charlie Brown', 'charlie.brown@example.com', '+91-9876543214', 'Male', 'Delivery', '2024-01-29 15:00:00', '2024-01-29 15:15:00']
+                ];
+
+                const insertSql = `INSERT INTO users (name, email, mobile_number, gender, reason_for_appointment, entry_time, exit_time) VALUES ?`;
+                db.query(insertSql, [sampleValues], (err) => {
+                    if (err) {
+                        console.error('Error inserting sample data:', err.message);
+                    } else {
+                        console.log('✅ Inserted sample visitor records');
+                    }
+                });
+            }
+        });
+    });
+});
+
+// Serve the main HTML page
+app.get('/', (req, res) => {
+    res.sendFile(path.join(__dirname, 'index_visitor.html'));
+});
+
+// Health check endpoint
+app.get('/health', (req, res) => {
+    db.ping((err) => {
+        if (err) {
+            res.status(500).json({ 
+                status: 'ERROR', 
+                message: 'Database connection lost',
+                error: err.message 
+            });
+        } else {
+            res.json({ 
+                status: 'OK', 
+                message: 'Server and database are running',
+                database: db.config.database
+            });
+        }
+    });
+});
+
+// CREATE - Add new visitor record
+app.post('/api/data', (req, res) => {
+    const { 
+        name, 
+        email, 
+        mobile_number, 
+        gender, 
+        reason_for_appointment, 
+        entry_time, 
+        exit_time 
+    } = req.body;
+    
+    // Validate required fields
+    if (!name || !email || !mobile_number || !gender || !reason_for_appointment || !entry_time) {
+        res.status(400).json({ 
+            error: 'Name, email, mobile number, gender, reason for appointment, and entry time are required' 
+        });
+        return;
+    }
+    
+    const query = `INSERT INTO users 
+        (name, email, mobile_number, gender, reason_for_appointment, entry_time, exit_time, created_at) 
+        VALUES (?, ?, ?, ?, ?, ?, ?, NOW())`;
+    
+    db.query(query, [
+        name, 
+        email, 
+        mobile_number, 
+        gender, 
+        reason_for_appointment, 
+        entry_time, 
+        exit_time || null
+    ], (err, result) => {
+        if (err) {
+            console.error('Error executing query:', err);
+            if (err.code === 'ER_DUP_ENTRY') {
+                res.status(400).json({ error: 'Email already exists' });
+            } else if (err.code === 'ER_NO_SUCH_TABLE') {
+                res.status(500).json({ 
+                    error: 'Table does not exist. Please run setup_database_updated.sql first' 
+                });
+            } else {
+                res.status(500).json({ error: 'Database error', details: err.message });
+            }
+            return;
+        }
+        res.status(201).json({ 
+            message: 'Visitor registered successfully', 
+            id: result.insertId 
+        });
+    });
+});
+
+// READ - Get all visitor records
+app.get('/api/data', (req, res) => {
+    const query = 'SELECT * FROM users ORDER BY entry_time DESC';
+    
+    db.query(query, (err, results) => {
+        if (err) {
+            console.error('Error executing query:', err);
+            if (err.code === 'ER_NO_SUCH_TABLE') {
+                // Try to create the table on-the-fly and retry the query once
+                db.query(createTableSql, (createErr) => {
+                    if (createErr) {
+                        console.error('Error creating users table:', createErr);
+                        res.status(500).json({ error: 'Database table missing and creation failed', details: createErr.message });
+                        return;
+                    }
+                    // Retry original query
+                    db.query(query, (retryErr, retryResults) => {
+                        if (retryErr) {
+                            console.error('Retry query failed:', retryErr);
+                            res.status(500).json({ error: 'Database error', details: retryErr.message });
+                            return;
+                        }
+                        res.json(retryResults);
+                    });
+                });
+                return;
+            } else {
+                res.status(500).json({ error: 'Database error', details: err.message });
+            }
+            return;
+        }
+        res.json(results);
+    });
+});
+
+// READ - Get single visitor record by ID
+app.get('/api/data/:id', (req, res) => {
+    const { id } = req.params;
+    const query = 'SELECT * FROM users WHERE id = ?';
+    
+    db.query(query, [id], (err, results) => {
+        if (err) {
+            console.error('Error executing query:', err);
+            res.status(500).json({ error: 'Database error', details: err.message });
+            return;
+        }
+        if (results.length === 0) {
+            res.status(404).json({ error: 'Record not found' });
+            return;
+        }
+        res.json(results[0]);
+    });
+});
+
+// UPDATE - Update visitor record
+app.put('/api/data/:id', (req, res) => {
+    const { id } = req.params;
+    const { 
+        name, 
+        email, 
+        mobile_number, 
+        gender, 
+        reason_for_appointment, 
+        entry_time, 
+        exit_time 
+    } = req.body;
+    
+    // Validate required fields
+    if (!name || !email || !mobile_number || !gender || !reason_for_appointment || !entry_time) {
+        res.status(400).json({ 
+            error: 'Name, email, mobile number, gender, reason for appointment, and entry time are required' 
+        });
+        return;
+    }
+    
+    const query = `UPDATE users 
+        SET name = ?, email = ?, mobile_number = ?, gender = ?, 
+            reason_for_appointment = ?, entry_time = ?, exit_time = ?, 
+            updated_at = NOW() 
+        WHERE id = ?`;
+    
+    db.query(query, [
+        name, 
+        email, 
+        mobile_number, 
+        gender, 
+        reason_for_appointment, 
+        entry_time, 
+        exit_time || null, 
+        id
+    ], (err, result) => {
+        if (err) {
+            console.error('Error executing query:', err);
+            if (err.code === 'ER_DUP_ENTRY') {
+                res.status(400).json({ error: 'Email already exists' });
+            } else {
+                res.status(500).json({ error: 'Database error', details: err.message });
+            }
+            return;
+        }
+        if (result.affectedRows === 0) {
+            res.status(404).json({ error: 'Record not found' });
+            return;
+        }
+        res.json({ message: 'Record updated successfully' });
+    });
+});
+
+// PATCH - Mark visitor exit
+app.patch('/api/data/:id/exit', (req, res) => {
+    const { id } = req.params;
+    const { exit_time } = req.body;
+    
+    if (!exit_time) {
+        res.status(400).json({ error: 'Exit time is required' });
+        return;
+    }
+    
+    const query = 'UPDATE users SET exit_time = ?, updated_at = NOW() WHERE id = ?';
+    
+    db.query(query, [exit_time, id], (err, result) => {
+        if (err) {
+            console.error('Error executing query:', err);
+            res.status(500).json({ error: 'Database error', details: err.message });
+            return;
+        }
+        if (result.affectedRows === 0) {
+            res.status(404).json({ error: 'Record not found' });
+            return;
+        }
+        res.json({ message: 'Exit time recorded successfully' });
+    });
+});
+
+// DELETE - Delete visitor record
+app.delete('/api/data/:id', (req, res) => {
+    const { id } = req.params;
+    const query = 'DELETE FROM users WHERE id = ?';
+    
+    db.query(query, [id], (err, result) => {
+        if (err) {
+            console.error('Error executing query:', err);
+            res.status(500).json({ error: 'Database error', details: err.message });
+            return;
+        }
+        if (result.affectedRows === 0) {
+            res.status(404).json({ error: 'Record not found' });
+            return;
+        }
+        res.json({ message: 'Record deleted successfully' });
+    });
+});
+
+// Get active visitors (no exit time)
+app.get('/api/data/active/visitors', (req, res) => {
+    const query = 'SELECT * FROM users WHERE exit_time IS NULL ORDER BY entry_time DESC';
+    
+    db.query(query, (err, results) => {
+        if (err) {
+            console.error('Error executing query:', err);
+            res.status(500).json({ error: 'Database error', details: err.message });
+            return;
+        }
+        res.json(results);
+    });
+});
+
+// Get visitor statistics
+app.get('/api/stats', (req, res) => {
+    const queries = {
+        total: 'SELECT COUNT(*) as count FROM users',
+        active: 'SELECT COUNT(*) as count FROM users WHERE exit_time IS NULL',
+        today: 'SELECT COUNT(*) as count FROM users WHERE DATE(entry_time) = CURDATE()',
+        byGender: 'SELECT gender, COUNT(*) as count FROM users GROUP BY gender'
+    };
+    
+    const stats = {};
+    let completed = 0;
+    
+    Object.keys(queries).forEach(key => {
+        db.query(queries[key], (err, results) => {
+            if (!err) {
+                stats[key] = key === 'byGender' ? results : results[0].count;
+            }
+            completed++;
+            
+            if (completed === Object.keys(queries).length) {
+                res.json(stats);
+            }
+        });
+    });
+});
+
+// Error handling middleware
+app.use((err, req, res, next) => {
+    console.error('Server error:', err);
+    res.status(500).json({ error: 'Internal server error', details: err.message });
+});
+
+// 404 handler
+app.use((req, res) => {
+    res.status(404).json({ error: 'Endpoint not found' });
+});
+
+// Start server
+app.listen(PORT, () => {
+    console.log('\n🚀 Visitor Management System Started!');
+    console.log('='*50);
+    console.log(`📡 Server running on http://localhost:${PORT}`);
+    console.log(`🌐 Open http://localhost:${PORT} in your browser`);
+    console.log(`\n💡 API Endpoints:`);
+    console.log(`   GET    /health                  - Check server status`);
+    console.log(`   GET    /api/data                - Get all visitors`);
+    console.log(`   GET    /api/data/:id            - Get single visitor`);
+    console.log(`   POST   /api/data                - Register new visitor`);
+    console.log(`   PUT    /api/data/:id            - Update visitor record`);
+    console.log(`   PATCH  /api/data/:id/exit       - Mark visitor exit`);
+    console.log(`   DELETE /api/data/:id            - Delete visitor record`);
+    console.log(`   GET    /api/data/active/visitors- Get active visitors`);
+    console.log(`   GET    /api/stats               - Get visitor statistics`);
+    console.log(`\n⏹️  Press Ctrl+C to stop the server\n`);
+});
+
+// Handle server shutdown gracefully
+process.on('SIGINT', () => {
+    console.log('\n\n⏹️  Shutting down server...');
+    db.end((err) => {
+        if (err) {
+            console.error('Error closing database connection:', err);
+        } else {
+            console.log('✅ Database connection closed');
+        }
+        console.log('👋 Server stopped\n');
+        process.exit(0);
+    });
+});
+
+// Handle uncaught errors
+process.on('uncaughtException', (err) => {
+    console.error('❌ Uncaught Exception:', err);
+    process.exit(1);
+});
+
+process.on('unhandledRejection', (err) => {
+    console.error('❌ Unhandled Rejection:', err);
+    process.exit(1);
+});
