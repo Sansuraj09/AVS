@@ -1,29 +1,28 @@
-                                                                                             docker-compose.yaml
 version: '3.8'
 
 services:
+  # 1. DATABASE TIER
   db:
     image: mysql:8.0
-    container_name: avs_mysql
+    container_name: avs_db
     restart: always
     environment:
       MYSQL_ROOT_PASSWORD: Suraj_jadhav2003
       MYSQL_DATABASE: users
-    ports:
-      - "3306:3306"
     volumes:
-      - ./setup_database_updated.sql:/docker-entrypoint-initdb.d/setup_database_updated.sql
       - mysql_data:/var/lib/mysql
+      - ./setup_database_updated.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - avs_network
 
-  
-  app:
-    build: .
-    container_name: avs_app
+  # 2. BACKEND TIER (Node.js API)
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: avs_backend
     dns:
       - 8.8.8.8
-      - 8.8.4.4
-    ports:
-      - "3001:3000"
     depends_on:
       - db
     environment:
@@ -31,10 +30,26 @@ services:
       - DB_USER=root
       - DB_PASSWORD=Suraj_jadhav2003
       - DB_NAME=users
+    ports:
+      - "3000:3000"
+    networks:
+      - avs_network
+  # 3. FRONTEND TIER (Nginx)
+  frontend:
+    image: nginx:alpine
+    container_name: avs_frontend
+    ports:
+      - "3001:80" # Access your website at http://localhost:3001
+    volumes:
+      - .:/usr/share/nginx/html # Serves your admin_login.html, index_visitor.html, etc.
+    depends_on:
+      - backend
+    networks:
+      - avs_network
+
+networks:
+  avs_network:
+    driver: bridge
 
 volumes:
   mysql_data:
-
-
-
-
